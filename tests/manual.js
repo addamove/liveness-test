@@ -22,9 +22,9 @@ const observer = new MutationObserver(() => {
   const results = document.getElementById('results');
   if (results && !results.hidden) {
     observer.disconnect();
-    const modelRequests = performance.getEntriesByType('resource').filter(r => /\/models\/|face-landmarks-detection|face_mesh/.test(r.name));
-    const ok = results.querySelectorAll('img').length === 2 && tracks.every(t => t.readyState === 'ended') && modelRequests.length === 0 && results.textContent.includes('Движение не проверено') && results.textContent.includes('Без проверки') && !results.textContent.includes('прошли условия автосъёмки');
-    badge.textContent = ok ? 'MANUAL PASS · 2 PHOTOS · 0 MODEL REQUESTS · TRACKS STOPPED' : `MANUAL FAIL · ${modelRequests.length} MODEL REQUESTS`;
+    const modelRequests = performance.getEntriesByType('resource').filter(r => /\/models\/|tasks-vision|onnxruntime|face.worker|document.worker/.test(r.name));
+    const ok = results.querySelectorAll('img').length === 3 && tracks.every(t => t.readyState === 'ended') && modelRequests.length === 0 && results.textContent.includes('Движение не проверено') && results.textContent.includes('Без проверки') && !results.textContent.includes('прошли условия автосъёмки');
+    badge.textContent = ok ? 'MANUAL PASS · 3 PHOTOS · 0 MODEL REQUESTS · TRACKS STOPPED' : `MANUAL FAIL · ${modelRequests.length} MODEL REQUESTS`;
   }
 });
 observer.observe(document.body, { subtree: true, attributes: true, childList: true });

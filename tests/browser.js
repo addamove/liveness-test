@@ -1,10 +1,11 @@
-import { loadOpenCV, loadFaceDetector, estimatePose, findDocument } from '../src/vision.js';
+import { loadDocumentDetector } from '../src/document-model.js';
+import { loadOpenCV, loadFaceDetector, estimatePose, findDocument, observeDocumentCorners } from '../src/vision.js';
 import { guideFor, evaluateFace, evaluateDocument } from '../src/geometry.js';
 const output = document.querySelector('#output');
 const log = value => { output.textContent += `${typeof value === 'string' ? value : JSON.stringify(value, null, 2)}\n`; };
 document.querySelector('#run').onclick = async () => {
   output.textContent = ''; document.querySelector('#run').disabled = true;
-  let detector;
+  let detector, documentModel;
   try {
     log('Загрузка OpenCV и MediaPipe…');
     const [{ cv }, model] = await Promise.all([loadOpenCV(), loadFaceDetector()]); detector = model;
@@ -30,7 +31,19 @@ document.querySelector('#run').onclick = async () => {
     const points = findDocument(cv, dc.getImageData(0, 0, doc.width, doc.height), dg);
     if (!evaluateDocument(points, dg, points.points).valid) throw new Error('Синтетический документ не прошёл условия');
     log('PASS: OpenCV нашёл документ, все углы внутри рамки.');
+    documentModel = await loadDocumentDetector(new URLSearchParams(location.search).has('wasm') ? { executionProviders: ['wasm'] } : {});
+    log(`PASS: DocAligner LCNet100 загружен (${documentModel.backend}).`);
+    const imageData = dc.getImageData(0, 0, doc.width, doc.height);
+    const corners = await documentModel.estimateDocument(imageData);
+    log({ docAlignerCorners: corners });
+    const observation = observeDocumentCorners(cv, imageData, corners);
+    if (!observation) throw new Error('DocAligner не нашёл синтетический разворот');
+    const assessment = evaluateDocument(observation, dg, corners);
+    log({ docAlignerChecks: assessment.checks });
+    if (!assessment.valid) throw new Error('DocAligner не прошёл общие условия');
+    dc.fillStyle = '#222'; dc.fillRect(0, 0, doc.width, doc.height);
+    if (await documentModel.estimateDocument(dc.getImageData(0, 0, doc.width, doc.height))) throw new Error('DocAligner нашёл документ на пустом фоне');
     log('MODEL TESTS PASSED');
   } catch (error) { log(`FAIL: ${error.stack || error}`); }
-  finally { detector?.dispose(); document.querySelector('#run').disabled = false; }
+  finally { detector?.dispose(); documentModel?.dispose(); document.querySelector('#run').disabled = false; }
 };

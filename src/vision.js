@@ -22,11 +22,9 @@ export function loadOpenCV() {
   return cvPromise;
 }
 
-export async function loadFaceDetector() {
-  const face = await import('@tensorflow-models/face-landmarks-detection');
-  return face.createDetector(face.SupportedModels.MediaPipeFaceMesh, {
-    runtime: 'mediapipe', solutionPath: '/models/face_mesh', maxFaces: 2, refineLandmarks: true,
-  });
+export async function loadFaceDetector(options) {
+  const { createFaceDetector } = await import('./face-landmarker.js');
+  return createFaceDetector(options);
 }
 
 // MediaPipe canonical mesh, converted from +Y up/+Z forward to camera coordinates.
@@ -84,6 +82,21 @@ export function findSpread(cv, gray, points, orientation = 'landscape') {
     }
     return best;
   } finally { allocated.reverse().forEach(m => m.delete()); }
+}
+
+// OpenCV supplies the shared crease check, never substitutes missing ML corners.
+export function observeDocumentCorners(cv, imageData, points, orientation = 'landscape') {
+  if (!points || points.length !== 4) return null;
+  const src = cv.matFromImageData(imageData), gray = new cv.Mat();
+  try {
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    const cornerVisible = points.map(p => p.x > 3 && p.y > 3 && p.x < imageData.width - 4 && p.y < imageData.height - 4);
+    const rectangularity = Math.max(...points.map((p, j) => {
+      const a = points[(j + 3) % 4], b = points[(j + 1) % 4];
+      return Math.abs(((a.x - p.x) * (b.x - p.x) + (a.y - p.y) * (b.y - p.y)) / (distance(a, p) * distance(b, p)));
+    }));
+    return { points, cornerVisible, fullyVisible: cornerVisible.every(Boolean), rectangularity, spread: findSpread(cv, gray, points, orientation) };
+  } finally { gray.delete(); src.delete(); }
 }
 
 export function findDocument(cv, imageData, guide, orientation = 'landscape') {

@@ -102,9 +102,9 @@ try {
     if (results && !results.hidden) {
       observer.disconnect();
       const motionOK = scenario === 'motion' ? results.textContent.includes('Круговое движение выполнено') : results.textContent.includes('Движение не проверено');
-      const timingOK = ['face', 'document'].every(key => confirmations.get(key)?.duration >= 1450);
-      const ok = timingOK && motionOK && results.querySelectorAll('img').length === 2 && tracks.every(t => t.readyState === 'ended') && (['slow', 'error'].includes(scenario) ? results.textContent.includes('Без проверки') : results.textContent.includes('прошли условия автосъёмки'));
-      badge.textContent = ok ? 'E2E PASS · 2 PHOTOS · TRANSITIONS ≥ 1.5s · ALL TRACKS STOPPED' : 'E2E FAIL';
+      const timingOK = ['face', 'document', 'document-ml'].every(key => confirmations.get(key)?.duration >= 1450);
+      const ok = timingOK && motionOK && results.querySelectorAll('img').length === 3 && tracks.every(t => t.readyState === 'ended') && (['slow', 'error'].includes(scenario) ? results.textContent.includes('Без проверки') : results.textContent.includes('прошли условия автосъёмки'));
+      badge.textContent = ok ? 'E2E PASS · 3 PHOTOS · TRANSITIONS ≥ 1.5s · ALL TRACKS STOPPED' : 'E2E FAIL';
     }
   });
   observer.observe(document.body, { subtree: true, attributes: true, childList: true });

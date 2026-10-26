@@ -3,7 +3,7 @@ export const LIMITS = { holdMs: 400, maxGapMs: 350, yaw: 14.95, pitch: 17.25, ro
 export const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
 export function guideFor(width, height, step, orientation = 'landscape') {
-  const face = step !== 'document';
+  const face = step !== 'document' && step !== 'document-ml';
   const ratio = orientation === 'portrait' ? 1 / 1.42 : 1.42;
   const w = face ? Math.min(width * 0.70, height * 0.34) : Math.min(width * 0.84, height * 0.42 * ratio);
   const h = face ? w * 1.28 : w / ratio;
