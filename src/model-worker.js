@@ -8,6 +8,10 @@ export class ModelWorker {
       const request = this.pending.get(data.id);
       if (!request) return;
       this.pending.delete(data.id);
+      if (request.type === 'detect' && Number.isFinite(data.processingMs)) {
+        const roundTripMs = performance.now() - request.startedAt;
+        this.lastTiming = { workerMs: data.processingMs, roundTripMs, deliveryMs: Math.max(0, roundTripMs - data.processingMs) };
+      }
       if (data.error) request.reject(new Error(data.error));
       else request.resolve(data.result);
     };
@@ -17,7 +21,7 @@ export class ModelWorker {
     if (!this.worker) return Promise.reject(new Error('Обработка остановлена'));
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { resolve, reject, type, startedAt: performance.now() });
       try { this.worker.postMessage({ id, type, ...payload }, transfer); }
       catch (error) { this.pending.delete(id); reject(error); }
     });

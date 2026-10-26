@@ -2,7 +2,8 @@ import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { normalizeFaces } from './face-points.js';
 
 let model;
-self.onmessage = async ({ data: { id, type, bitmap, timestamp } }) => {
+self.onmessage = async ({ data: { id, type, bitmap, width, height, timestamp } }) => {
+  const startedAt = performance.now();
   try {
     let result;
     if (type === 'init') {
@@ -21,9 +22,9 @@ self.onmessage = async ({ data: { id, type, bitmap, timestamp } }) => {
       }
       if (!model) throw lastError;
     } else {
-      result = normalizeFaces(model.detectForVideo(bitmap, timestamp), bitmap.width, bitmap.height);
+      result = normalizeFaces(model.detectForVideo(bitmap, timestamp), width, height);
     }
-    self.postMessage({ id, result });
+    self.postMessage({ id, result, processingMs: performance.now() - startedAt });
   } catch (error) { self.postMessage({ id, error: error.message || String(error) }); }
   finally { bitmap?.close(); }
 };

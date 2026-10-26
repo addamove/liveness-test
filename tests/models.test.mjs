@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { documentTensor, decodeDocumentHeatmap } from '../src/docaligner.js';
-import { normalizeFaces } from '../src/face-points.js';
+import { normalizeFaces, faceInputSize } from '../src/face-points.js';
 import { STEPS, PHOTO_STEPS, nextStep, CaptureStats } from '../src/comparison.js';
 import { guideFor } from '../src/geometry.js';
 import { ModelWorker } from '../src/model-worker.js';
@@ -44,7 +44,7 @@ test('four-step sequence keeps two distinct document captures and identical guid
 });
 test('comparison excludes warmup and measures all attempt frames, resets between engines', () => {
   const stats = new CaptureStats();
-  [900, 800, 10, 20, 30, 40].forEach((ms, i) => stats.observe(ms, i % 2 === 0));
+  [2400, 1800, 900, 800, 10, 20, 30, 40].forEach((ms, i) => stats.observe(ms, i % 2 === 0));
   assert.deepEqual(stats.snapshot(), { samples: 4, meanMs: 25, p95Ms: 40, detectedFrames: 2, detectionRate: .5 });
   stats.reset(); assert.equal(stats.snapshot().meanMs, null); assert.equal(stats.snapshot().samples, 0);
 });
@@ -58,4 +58,12 @@ test('worker termination cancels pending inference and loading without leaving n
   const loading = new ModelWorker({ postMessage() {}, terminate() { stopped = true; } });
   const init = loading.initialize(controller.signal); controller.abort();
   await assert.rejects(init, { name: 'AbortError' }); assert.equal(stopped, true);
+});
+
+test('face inference input is bounded without shrinking the photo coordinate system', () => {
+  assert.deepEqual(faceInputSize(590, 960), { width: 393, height: 640 });
+  assert.deepEqual(faceInputSize(1280, 720), { width: 640, height: 360 });
+  assert.deepEqual(faceInputSize(320, 240), { width: 320, height: 240 });
+  const [face] = normalizeFaces({ faceLandmarks: [[{ x: .5, y: .5, z: .1 }]] }, 590, 960);
+  assert.deepEqual(face.keypoints[0], { x: 295, y: 480, z: 59 });
 });

@@ -1,3 +1,5 @@
+import { PERFORMANCE_LIMITS } from './performance.js';
+
 export const STEPS = ['face', 'document', 'document-ml', 'liveness'];
 export const PHOTO_STEPS = STEPS.slice(0, 3);
 export const isDocumentStep = step => step === 'document' || step === 'document-ml';
@@ -8,9 +10,9 @@ export class CaptureStats {
   constructor() { this.reset(); }
   reset() { this.times = []; this.frames = 0; this.found = 0; }
   observe(ms, found) {
-    // Match the performance guard's two warmup frames. Keep all measured frames
+    // Match the performance guard's warmup frames. Keep all measured frames
     // for this attempt, rather than comparing only the final rolling window.
-    if (++this.frames <= 2) return;
+    if (++this.frames <= PERFORMANCE_LIMITS.warmupFrames) return;
     this.times.push(ms);
     if (found) this.found++;
   }

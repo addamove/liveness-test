@@ -44,7 +44,7 @@ document.querySelector('#app').innerHTML = `
         <div id="capture-success" class="capture-success" role="status" hidden><img id="captured-preview" alt=""/><div class="success-shade"></div><div class="capture-confirmation"><span class="capture-check">${icon('check', 42)}</span><h2 id="capture-title">Снимок готов</h2><p id="capture-next"></p></div></div>
         <div id="flash" class="flash"></div>
       </div>
-      <details class="diagnostics" id="diagnostics"><summary><span><i id="engine-dot"></i> Диагностика в реальном времени</span><span class="plus">+</span></summary><div class="diagnostic-body"><div id="checks" class="checks">Показатели появятся после включения камеры.</div><div class="performance"><span id="engine">Модели ещё не загружены</span><span id="timing">— мс</span></div><label class="debug-switch"><input type="checkbox" id="debug" checked> Показывать найденные точки и контур</label><p class="diagnostic-note">Взгляд оценивается по радужкам, поворот головы — по 3D-точкам. Повороты и движение головы оцениваются приблизительно. Круговое движение не подтверждает защиту от подмены фото или видео. Разворот определяется по контуру и сгибу, без распознавания содержимого.</p></div></details>
+      <details class="diagnostics" id="diagnostics"><summary><span><i id="engine-dot"></i> Диагностика в реальном времени</span><span class="plus">+</span></summary><div class="diagnostic-body"><div id="checks" class="checks">Показатели появятся после включения камеры.</div><div class="performance"><span id="engine">Модели ещё не загружены</span><span id="timing">— мс</span></div><p id="performance-detail" class="diagnostic-note"></p><label class="debug-switch"><input type="checkbox" id="debug" checked> Показывать найденные точки и контур</label><p class="diagnostic-note">Взгляд оценивается по радужкам, поворот головы — по 3D-точкам. Повороты и движение головы оцениваются приблизительно. Круговое движение не подтверждает защиту от подмены фото или видео. Разворот определяется по контуру и сгибу, без распознавания содержимого.</p></div></details>
     </section>
     <section id="results" class="results" hidden></section>
   </main>
@@ -65,7 +65,30 @@ const captureStats = new CaptureStats();
 let session = 0, timer, lastTime = -1, previousQuad, latest, inference, captures = {};
 let visibilityEpoch = 0;
 let captureMode = 'auto', manualReason = null, performanceSummary = null;
+let fallbackDiagnostic = null;
 let modelVersion = 0, modelWait, inferenceWait;
+
+function currentEngine() {
+  return step === 'document' ? 'OpenCV · WASM' : step === 'document-ml' ? `DocAligner · ${documentDetector?.backend || 'загрузка'}` : `Face Landmarker · ${detector?.backend || 'загрузка'}`;
+}
+
+function performanceDetails(data) {
+  if (!data) return '';
+  const { summary, worker, timeoutMs, elapsedMs } = data;
+  const parts = [`${STEP_LABELS[data.step]}: ${data.engine}`];
+  if (summary?.warmingUp) parts.push(`прогрев ${summary.warmupFrames}/${PERFORMANCE_LIMITS.warmupFrames}`);
+  if (summary?.meanMs != null) parts.push(`обработка в среднем ${Math.round(summary.meanMs)} мс`);
+  if (summary?.meanIntervalMs > 0) parts.push(`${(1000 / summary.meanIntervalMs).toFixed(1)} кадров/с`);
+  if (worker) parts.push(`worker ${Math.round(worker.workerMs)} мс, обмен ${Math.round(worker.deliveryMs)} мс`);
+  if (timeoutMs) parts.push(`ответ не получен за ${Math.round(elapsedMs || timeoutMs)} мс (лимит ${timeoutMs} мс)`);
+  const causes = { processing: 'устойчиво долгая обработка', cadence: 'устойчиво редкие обновления кадров', 'ui-stall': 'задержка основного потока' };
+  if (summary?.fallback && causes[summary.trigger]) parts.push(`причина: ${causes[summary.trigger]}`);
+  return parts.join(' · ');
+}
+
+function diagnosticSnapshot() {
+  return { step, engine: currentEngine(), summary: performanceSummary, worker: (step === 'document-ml' ? documentDetector : step === 'document' ? null : detector)?.lastTiming || null };
+}
 
 function disposeModel(model) {
   if (!model) return;
@@ -94,7 +117,7 @@ function renderControls() {
   $('skip-motion').className = captureMode === 'manual' || phase === 'error' ? 'primary-button' : 'manual-mode-button';
   $('flip').hidden = !ready || isMotion;
   $('document-orientation').hidden = !isDocumentStep(step) || !ready;
-  $('manual-mode').hidden = isMotion || phase === 'captured' || phase === 'result' || (captureMode === 'manual' && !['idle', 'error'].includes(phase));
+  $('manual-mode').hidden = phase === 'captured' || phase === 'result' || (isMotion && captureMode === 'auto') || (captureMode === 'manual' && phase === 'loading');
   $('manual-mode').textContent = captureMode === 'manual' ? 'Попробовать автосъёмку' : 'Снимать по кнопке';
   shell.dataset.mode = captureMode;
   shell.dataset.phase = phase;
@@ -110,11 +133,13 @@ function renderManual() {
   } else setMessage(step === 'face' ? 'Расположите лицо в овале' : 'Раскройте паспорт в рамке', isDocumentStep(step) ? 'Обе страницы и сгиб должны быть видны. Положение не проверяется — сделайте фото по кнопке.' : `${MANUAL_REASONS[manualReason]} Положение не проверяется.`, 'СЪЁМКА ПО КНОПКЕ');
   $('checks').textContent = step === 'liveness' ? 'Модели выключены. Проверка движения не выполняется.' : 'Проверки выключены. Убедитесь, что объект целиком виден в рамке, и нажмите «Сделать фото».';
   $('engine').textContent = 'Ручной режим · обработка выключена';
-  $('timing').textContent = performanceSummary?.meanMs ? `${Math.round(performanceSummary.meanMs)} мс до переключения` : '—';
+  $('timing').textContent = fallbackDiagnostic?.summary?.meanMs ? `${Math.round(fallbackDiagnostic.summary.meanMs)} мс до переключения` : '—';
+  $('performance-detail').textContent = performanceDetails(fallbackDiagnostic);
   $('engine-dot').className = 'manual';
 }
 
-function switchToManual(reason) {
+function switchToManual(reason, detail = {}) {
+  fallbackDiagnostic = reason === 'user' ? null : { ...diagnosticSnapshot(), reason, ...detail };
   captureMode = 'manual'; manualReason = reason;
   clearTimeout(timer); gate.reset(); performanceGuard.reset(); previousQuad = null;
   releaseModels();
@@ -125,7 +150,8 @@ function switchToManual(reason) {
 }
 
 function runCapture(token) {
-  phase = 'running'; gate.reset(); performanceGuard.reset(); captureStats.reset(); performanceSummary = null;
+  phase = 'running'; gate.reset(); performanceGuard.reset(); captureStats.reset();
+  if (captureMode === 'auto') performanceSummary = null;
   renderControls();
   if (captureMode === 'manual') renderManual();
   else { $('engine-dot').className = 'ready'; tick(token); }
@@ -315,6 +341,7 @@ function renderAnalysis(result, hold, ms) {
   $('checks').innerHTML = result.checks.map(c => `<div class="check-row ${c.ok ? 'pass' : ''}"><span class="check-icon">${c.ok ? icon('check', 12) : '·'}</span><span>${c.label}<small>${c.detail}</small></span></div>`).join('');
   $('engine').textContent = isDocumentStep(step) ? step === 'document-ml' ? `DocAligner LCNet100 · ${documentDetector?.backend || 'ONNX'}` : 'OpenCV · контур + сгиб' : `Face Landmarker · ${detector?.backend || '478 точек'}`;
   $('timing').textContent = `${Math.round(ms)} мс`;
+  $('performance-detail').textContent = performanceDetails(diagnosticSnapshot());
   $('hold-ring').style.strokeDashoffset = `${195 * (1 - hold.progress)}`;
   $('hold-value').textContent = Math.min(400, Math.floor(hold.elapsed));
   const firstFailure = result.checks.find(c => !c.ok);
@@ -327,7 +354,7 @@ function renderAnalysis(result, hold, ms) {
     const title = firstFailure?.id === 'pose' ? 'Держите голову прямо' : firstFailure?.id === 'face' && result.face == null && firstFailure?.detail !== 'Лицо не найдено' ? 'В кадре должен быть один человек' : firstFailure?.detail || 'Поместите объект в рамку';
     setMessage(title, step === 'face' ? 'Смотрите в объектив и держите голову прямо' : 'Контрастный фон поможет увидеть все четыре края', 'ИЩЕМ ПОДХОДЯЩИЙ КАДР');
   }
-  if (ms > LIMITS.maxGapMs) $('hint').textContent = 'Обработка медленная. Закройте другие вкладки или попробуйте другой браузер.';
+  if (!performanceSummary?.calibrating && ms > LIMITS.maxGapMs) $('hint').textContent = 'Обработка этого кадра заняла больше времени. Продолжаем проверку.';
   drawOverlay(result);
 }
 
@@ -340,22 +367,26 @@ function renderMotion(result, ms) {
   $('motion-progress-label').textContent = state.stage === 'calibrate' ? 'Исходное положение' : state.stage === 'return' ? 'Круг пройден · вернитесь в центр' : `${Math.round(state.progress * 100)}% круга`;
   $('motion-progress-bar').style.width = `${state.progress * 100}%`;
   $('checks').textContent = `Контрольные точки: ${state.completed} / 9. Проверяется последовательное движение головы, не подлинность видео.`;
-  $('engine').textContent = 'Face Landmarker · движение головы'; $('timing').textContent = `${Math.round(ms)} мс`;
+  $('engine').textContent = currentEngine(); $('timing').textContent = `${Math.round(ms)} мс`;
+  $('performance-detail').textContent = performanceDetails(diagnosticSnapshot());
   drawOverlay(result);
 }
 
 async function tick(token) {
   if (token !== session || phase !== 'running' || captureMode !== 'auto') return;
+  let sampledAt, deadlineMs;
   try {
     if (document.hidden || $('help').open || video.readyState < 2 || video.currentTime === lastTime) { timer = setTimeout(() => tick(token), 80); return; }
     const epoch = visibilityEpoch;
     lastTime = video.currentTime;
-    const guide = sampleFrame(), sampledAt = performance.now();
+    const guide = sampleFrame(); sampledAt = performance.now();
+    deadlineMs = performanceGuard.deadlineMs;
+    if (performanceGuard.warmingUp) setMessage('Готовим автосъёмку', 'Первый запуск модели может занять несколько секунд.', 'ПРОГРЕВ МОДЕЛИ');
     let result, faces, pose;
     if (!isDocumentStep(step)) {
       inference = detector.estimateFaces(frame, { flipHorizontal: false });
       inferenceWait = new AbortController();
-      faces = await withDeadline(inference, PERFORMANCE_LIMITS.inferenceTimeoutMs, inferenceWait.signal);
+      faces = await withDeadline(inference, deadlineMs, inferenceWait.signal);
       if (token !== session || phase !== 'running' || captureMode !== 'auto') return;
       pose = faces.length === 1 ? step === 'liveness' ? estimateMotionPose(faces[0].keypoints) : estimatePose(cv, faces[0].keypoints, frame.width, frame.height) : null;
       result = step === 'face' ? evaluateFace(faces, guide, pose) : {};
@@ -370,7 +401,7 @@ async function tick(token) {
       if (step === 'document-ml') {
         inference = documentDetector.estimateDocument(imageData);
         inferenceWait = new AbortController();
-        const points = await withDeadline(inference, PERFORMANCE_LIMITS.inferenceTimeoutMs, inferenceWait.signal);
+        const points = await withDeadline(inference, deadlineMs, inferenceWait.signal);
         if (token !== session || phase !== 'running' || captureMode !== 'auto') return;
         small = observeDocumentCorners(cv, imageData, points, documentOrientation);
       } else small = findDocument(cv, imageData, scaledGuide, documentOrientation);
@@ -382,7 +413,7 @@ async function tick(token) {
     if (document.hidden || $('help').open || epoch !== visibilityEpoch) { gate.reset(); motion.reset(); performanceGuard.reset(); previousQuad = null; }
     else {
       captureStats.observe(ms, isDocumentStep(step) ? !!result.points : !!result.face);
-      performanceSummary = performanceGuard.observe(ms, sampledAt);
+      performanceSummary = performanceGuard.observe(ms, sampledAt, { blocking: step === 'document' });
       if (performanceSummary.fallback) { switchToManual('slow-inference'); return; }
       if (step === 'liveness') {
         result.motion = motion.update(pose, !performanceSummary.calibrating && ms <= LIMITS.maxGapMs && motionFaceReady(faces, guide, pose), sampledAt, facing === 'user');
@@ -393,12 +424,12 @@ async function tick(token) {
         renderAnalysis(result, hold, ms);
         if (hold.ready) { await capture(result, hold, token); return; }
       }
-      if (performanceSummary.calibrating) setMessage('Проверяем скорость обработки', 'Если автосъёмка замедляет устройство, включится съёмка по кнопке.', 'ПРОВЕРКА УСТРОЙСТВА');
+      if (performanceSummary.calibrating) setMessage('Готовим автосъёмку', 'Прогреваем модель и проверяем скорость. Можно расположиться в рамке.', 'ПОДГОТОВКА');
     }
     if (token === session && captureMode === 'auto') timer = setTimeout(() => tick(token), 60);
   } catch (error) {
     if (token !== session || captureMode !== 'auto') return;
-    if (phase === 'running') switchToManual(error.name === 'TimeoutError' ? 'slow-inference' : 'model-error');
+    if (phase === 'running') switchToManual(error.name === 'TimeoutError' ? 'slow-inference' : 'model-error', error.name === 'TimeoutError' ? { timeoutMs: deadlineMs, elapsedMs: performance.now() - sampledAt } : {});
     else fail(error, token);
   }
 }
@@ -421,6 +452,7 @@ async function capture(result, hold, token) {
     image: frame.toDataURL('image/jpeg', .94), width: frame.width, height: frame.height,
     timestamp: new Date().toISOString(), mode: captureMode, validated: captureMode === 'auto',
     fallbackReason: captureMode === 'manual' ? manualReason : null, performance: performanceSummary,
+    fallbackDiagnostic: captureMode === 'manual' ? fallbackDiagnostic : null,
     comparison: captureStats.snapshot(), engine: step === 'face' ? 'MediaPipe Face Landmarker' : step === 'document' ? 'OpenCV contours' : 'DocAligner LCNet100',
     backend: captureMode === 'manual' ? null : step === 'face' ? detector?.backend : step === 'document' ? 'WASM' : documentDetector?.backend,
     heldMs: captureMode === 'auto' ? Math.round(hold.elapsed) : null,
@@ -467,7 +499,7 @@ function showResults() {
   }).join('');
   out.innerHTML = `<div class="success-mark">${icon('check', 30)}</div><span class="eyebrow">СЪЁМКА ЗАВЕРШЕНА</span><h2>Три кадра готовы.</h2><p class="result-lead">${allValidated ? 'Лицо и оба снимка паспорта прошли условия автосъёмки.' : 'Фотографии готовы. Снимки по кнопке не проходили автоматическую проверку.'}</p>
     <div class="result-photos">${PHOTO_STEPS.map((key, i) => `<article><div class="photo-wrap"><img src="${captures[key].image}" alt="${STEP_LABELS[key]}"/><span>${icon(captures[key].validated ? 'check' : 'camera', 14)} ${captures[key].validated ? 'Авто' : 'По кнопке'}</span></div><h3>0${i + 1} / ${STEP_LABELS[key]}</h3><p>${captures[key].validated ? `${captures[key].heldMs} мс удержания` : 'Без проверки'} · ${captures[key].width} × ${captures[key].height}</p><button class="download-photo text-button" data-key="${key}">${icon('download', 17)} Скачать фото</button></article>`).join('')}</div>
-    <div class="comparison"><h3>OpenCV и DocAligner</h3><div class="comparison-scroll"><table><thead><tr><th>Детектор</th><th>Среднее</th><th>p95</th><th>Найден контур</th><th>Снимок</th></tr></thead><tbody>${comparisonRows}</tbody></table></div><p>Время обработки кадра вместе с общей проверкой сгиба, без первых двух прогревочных кадров. p95 — время, в которое уложились 95% замеров. «Найден контур» — кадры с четырьмя углами / все замеры, а не точность распознавания. Съёмки последовательные, условия могут отличаться.</p></div>
+    <div class="comparison"><h3>OpenCV и DocAligner</h3><div class="comparison-scroll"><table><thead><tr><th>Детектор</th><th>Среднее</th><th>p95</th><th>Найден контур</th><th>Снимок</th></tr></thead><tbody>${comparisonRows}</tbody></table></div><p>Время обработки кадра вместе с общей проверкой сгиба, без первых ${PERFORMANCE_LIMITS.warmupFrames} прогревочных кадров. p95 — время, в которое уложились 95% замеров. «Найден контур» — кадры с четырьмя углами / все замеры, а не точность распознавания. Съёмки последовательные, условия могут отличаться.</p></div>
     <article class="motion-result ${motionResult?.status === 'passed' ? 'passed' : 'unchecked'}"><span class="step-number">04</span><div><h3>${motionResult?.status === 'passed' ? 'Круговое движение выполнено' : 'Движение не проверено'}</h3><p>${motionResult?.status === 'passed' ? 'Последовательность поворотов и возврат в центр зафиксированы.' : 'Шаг пропущен. Результат проверки живости не получен.'}</p></div></article>
     <div class="result-actions"><button class="primary-button" id="restart">Пройти ещё раз ${icon('arrow')}</button><button class="text-button" id="download-report">${icon('download', 18)} Отчёт JSON</button></div><p class="result-note">Для автоматических снимков проверены рамка и условия съёмки. Ручные снимки — без проверки. Раскрытость паспорта определяется приблизительно по сгибу. Подлинность документа, личность и защита от подмены фото или видео не проверяются.</p>`;
   $('restart').onclick = reset;
@@ -486,8 +518,9 @@ function showResults() {
 $('start').onclick = start;
 $('manual-mode').onclick = () => {
   if (phase === 'captured' || phase === 'result') return;
-  if (captureMode === 'manual' && ['idle', 'error'].includes(phase)) {
-    captureMode = 'auto'; manualReason = null; performanceSummary = null;
+  if (captureMode === 'manual' && ['idle', 'error', 'running'].includes(phase)) {
+    captureMode = 'auto'; manualReason = null; performanceSummary = null; fallbackDiagnostic = null;
+    phase = 'idle';
     start();
   } else {
     const shouldStart = ['idle', 'error'].includes(phase);

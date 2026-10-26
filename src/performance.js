@@ -1,12 +1,15 @@
 export const PERFORMANCE_LIMITS = {
   loadTimeoutMs: 12000,
-  inferenceTimeoutMs: 1500,
-  warmupFrames: 2,
-  minSamples: 4,
+  warmupTimeoutMs: 8000,
+  inferenceTimeoutMs: 4000,
+  blockingStallMs: 1500,
+  warmupFrames: 4,
+  minSamples: 8,
   windowSize: 8,
+  minSlowSamples: 4,
   meanProcessingMs: 220,
   meanIntervalMs: 350,
-  consecutiveSlowFrames: 3,
+  sustainedSlowMs: 3000,
 };
 
 export function preflightReason({ wasm, webgl, memoryGB, cores }) {
@@ -32,24 +35,39 @@ export function inspectDevice() {
 
 export class PerformanceGuard {
   constructor() { this.reset(); }
-  reset() { this.warmup = 0; this.samples = []; this.lastAt = null; this.slowCount = 0; }
-  observe(processingMs, sampledAt) {
-    // A synchronous WASM call can block before a timeout callback gets a turn.
-    // Stop after that first severe stall, including during warmup.
-    if (processingMs >= PERFORMANCE_LIMITS.inferenceTimeoutMs) return { calibrating: false, fallback: true, meanMs: processingMs };
+  reset() { this.warmup = 0; this.samples = []; this.lastAt = null; this.slowSince = null; }
+  get warmingUp() { return this.warmup < PERFORMANCE_LIMITS.warmupFrames; }
+  get deadlineMs() { return this.warmingUp ? PERFORMANCE_LIMITS.warmupTimeoutMs : PERFORMANCE_LIMITS.inferenceTimeoutMs; }
+  observe(processingMs, sampledAt, { blocking = false } = {}) {
+    // OpenCV still runs on the UI thread: a real UI freeze must stop immediately.
+    // Worker startup/compilation does not freeze the UI and has its own deadline.
+    if (blocking && processingMs >= PERFORMANCE_LIMITS.blockingStallMs) return { calibrating: false, fallback: true, trigger: 'ui-stall', meanMs: processingMs };
+    if (this.warmingUp) {
+      this.warmup++;
+      // Do not leak the last cold frame's duration into the first measured interval.
+      this.lastAt = null;
+      return { calibrating: true, warmingUp: true, warmupFrames: this.warmup, fallback: false };
+    }
     const interval = this.lastAt === null ? null : sampledAt - this.lastAt;
     this.lastAt = sampledAt;
-    if (this.warmup++ < PERFORMANCE_LIMITS.warmupFrames) return { calibrating: true, fallback: false };
     this.samples.push({ processingMs, interval });
     if (this.samples.length > PERFORMANCE_LIMITS.windowSize) this.samples.shift();
-    this.slowCount = processingMs > 350 ? this.slowCount + 1 : 0;
     const count = this.samples.length;
     const meanMs = this.samples.reduce((sum, s) => sum + s.processingMs, 0) / count;
     const intervals = this.samples.map(s => s.interval).filter(n => n > 0);
     const meanIntervalMs = intervals.reduce((sum, n) => sum + n, 0) / (intervals.length || 1);
     const calibrating = count < PERFORMANCE_LIMITS.minSamples;
-    const fallback = this.slowCount >= PERFORMANCE_LIMITS.consecutiveSlowFrames || (!calibrating && (meanMs > PERFORMANCE_LIMITS.meanProcessingMs || meanIntervalMs > PERFORMANCE_LIMITS.meanIntervalMs));
-    return { calibrating, fallback, meanMs, meanIntervalMs, samples: count };
+    // A single large outlier can skew the mean for seconds. Require several
+    // independently slow samples, not just time spent waiting for one result.
+    const slowProcessing = this.samples.filter(s => s.processingMs > PERFORMANCE_LIMITS.meanProcessingMs).length;
+    const slowIntervals = intervals.filter(ms => ms > PERFORMANCE_LIMITS.meanIntervalMs).length;
+    const trigger = meanMs > PERFORMANCE_LIMITS.meanProcessingMs && slowProcessing >= PERFORMANCE_LIMITS.minSlowSamples ? 'processing'
+      : meanIntervalMs > PERFORMANCE_LIMITS.meanIntervalMs && slowIntervals >= PERFORMANCE_LIMITS.minSlowSamples ? 'cadence' : null;
+    if (!calibrating && trigger) this.slowSince ??= sampledAt;
+    else this.slowSince = null;
+    const slowForMs = this.slowSince === null ? 0 : sampledAt - this.slowSince;
+    const fallback = slowForMs >= PERFORMANCE_LIMITS.sustainedSlowMs;
+    return { calibrating, warmingUp: false, fallback, trigger, slowForMs, meanMs, meanIntervalMs, samples: count };
   }
 }
 

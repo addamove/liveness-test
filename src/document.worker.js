@@ -4,6 +4,7 @@ import { documentTensor, decodeDocumentHeatmap } from './docaligner.js';
 let model, original, context;
 const resized = new OffscreenCanvas(256, 256), resizedContext = resized.getContext('2d', { willReadFrequently: true });
 self.onmessage = async ({ data: { id, type, imageData, executionProviders } }) => {
+  const startedAt = performance.now();
   try {
     let result;
     if (type === 'init') {
@@ -36,6 +37,6 @@ self.onmessage = async ({ data: { id, type, imageData, executionProviders } }) =
         result = decodeDocumentHeatmap(heatmap.data, heatmap.dims, imageData.width, imageData.height);
       } finally { tensor.dispose(); Object.values(outputs || {}).forEach(t => t.dispose()); }
     }
-    self.postMessage({ id, result });
+    self.postMessage({ id, result, processingMs: performance.now() - startedAt });
   } catch (error) { self.postMessage({ id, error: error.message || String(error) }); }
 };

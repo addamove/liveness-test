@@ -13,7 +13,7 @@ try {
     const g = guideFor(canvas.width, canvas.height, 'liveness');
     const p = Array.from({ length: 478 }, () => ({ x: canvas.width / 2, y: g.y + g.height / 2, z: 0 }));
     FACE_OUTLINE.forEach((id, i) => { const a = -Math.PI / 2 + i * Math.PI * 2 / FACE_OUTLINE.length; p[id] = { x: canvas.width / 2 + g.width * .35 * Math.cos(a), y: g.y + g.height / 2 + g.height * .38 * Math.sin(a), z: 0 }; });
-    // Synthetic landmarks only on step 3. solvePnP and the motion gate stay real.
+    // Synthetic landmarks only on step 4. solvePnP and the motion gate stay real.
     const cycle = (motionCalls++ % 250), circleFrame = cycle - 25;
     const angle = -Math.PI / 2 + Math.max(0, Math.min(1, circleFrame / 150)) * Math.PI * 2;
     const active = circleFrame >= 0 && circleFrame <= 158;
@@ -34,13 +34,14 @@ try {
       return document.getElementById('camera-shell')?.dataset.step === 'liveness' ? makeMotionFace(args[0]) : estimate.apply(this, args);
     };
   }
-  if (scenario === 'slow' || scenario === 'error') {
+  if (['slow', 'error', 'warmup'].includes(scenario)) {
     const prototype = Object.getPrototypeOf(detector), estimate = prototype.estimateFaces;
     prototype.estimateFaces = async function (...args) {
       inferenceCalls++;
       if (scenario === 'error') throw new Error('Synthetic model failure');
       const faces = await estimate.apply(this, args);
-      await new Promise(resolve => setTimeout(resolve, 300));
+      const delay = scenario === 'warmup' ? ([2100, 700, 400, 100][inferenceCalls - 1] || (inferenceCalls === 14 ? 1800 : 0)) : 400;
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay));
       return faces;
     };
   }

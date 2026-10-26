@@ -6,3 +6,7 @@ export function normalizeFaces(result, width, height) {
     return { keypoints, box: { xMin, yMin, xMax, yMax, width: xMax - xMin, height: yMax - yMin } };
   });
 }
+export function faceInputSize(width, height) {
+  const scale = Math.min(1, 640 / Math.max(width, height));
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+}
