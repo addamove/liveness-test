@@ -1,5 +1,5 @@
 import './style.css';
-import { MotionChallenge, MOTION_LIMITS, motionFaceReady } from './liveness.js';
+import { MotionChallenge, MOTION_LIMITS, motionFaceReady, estimateMotionPose } from './liveness.js';
 import { guideFor, coverCrop, HoldGate, evaluateFace, evaluateDocument, FACE_OUTLINE, LIMITS } from './geometry.js';
 import { loadOpenCV, loadFaceDetector, estimatePose, findDocument } from './vision.js';
 import { inspectDevice, PerformanceGuard, PERFORMANCE_LIMITS, MANUAL_REASONS, withDeadline } from './performance.js';
@@ -154,7 +154,7 @@ function drawOverlay(result = latest) {
       detail += `<circle cx="${cx + Math.cos(a) * rx}" cy="${cy + Math.sin(a) * ry}" r="4" fill="${i < state.completed ? '#d5fa78' : '#ffffff55'}"/>`;
     }
     detail += `<circle class="motion-target" cx="${cx + state.target.x * rx}" cy="${cy + state.target.y * ry}" r="11" fill="#d5fa78" stroke="#23311d" stroke-width="3"/>`;
-    if (state.stage !== 'calibrate') detail += `<circle cx="${cx + Math.max(-1.4, Math.min(1.4, state.cursor.x)) * rx}" cy="${cy + Math.max(-1.4, Math.min(1.4, state.cursor.y)) * ry}" r="7" fill="#fff" stroke="#23311d" stroke-width="2"/>`;
+    if (state.stage !== 'calibrate') detail += `<circle opacity="${state.paused ? .35 : 1}" cx="${cx + Math.max(-1.4, Math.min(1.4, state.cursor.x)) * rx}" cy="${cy + Math.max(-1.4, Math.min(1.4, state.cursor.y)) * ry}" r="7" fill="#fff" stroke="#23311d" stroke-width="2"/>`;
   } else if ($('debug').checked && result?.face && phase === 'running') {
     detail = [...FACE_OUTLINE, 1, 33, 133, 263, 362, 468, 473].map(i => { const p = displayPoint(result.face.keypoints[i], w, frame.width); return `<circle cx="${p.x}" cy="${p.y}" r="${i >= 468 ? 3 : 1.5}" fill="${color}" opacity=".65"/>`; }).join('');
   }
@@ -287,7 +287,7 @@ async function start() {
 function sampleFrame() {
   const scale = Math.min(1.5, 960 / shell.clientHeight);
   const width = Math.round(shell.clientWidth * scale), height = Math.round(shell.clientHeight * scale);
-  if (frame.width !== width || frame.height !== height) { frame.width = width; frame.height = height; gate.reset(); motion.reset(); previousQuad = null; }
+  if (frame.width !== width || frame.height !== height) { frame.width = width; frame.height = height; gate.reset(); previousQuad = null; }
   const crop = coverCrop(video.videoWidth, video.videoHeight, width, height);
   frameCtx.drawImage(video, crop.x, crop.y, crop.width, crop.height, 0, 0, width, height);
   return guideFor(width, height, step, documentOrientation);
@@ -318,7 +318,7 @@ function renderMotion(result, ms) {
   latest = result;
   const state = result.motion;
   const titles = { calibrate: 'Посмотрите прямо в камеру', circle: 'Плавно ведите лицо за точкой', return: 'Вернитесь лицом в центр', passed: 'Движение выполнено' };
-  const hints = { calibrate: 'Сначала запомним положение головы. Телефон держите неподвижно.', circle: 'Слегка поворачивайте лицо вверх, вправо, вниз и влево. Белая точка — ваше движение.', return: 'Посмотрите прямо и задержитесь на мгновение.', passed: 'Круг пройден. Готовим результат.' };
+  const hints = { calibrate: 'Сначала запомним положение головы. Телефон держите неподвижно.', circle: 'Плавно поворачивайте лицо за зелёной точкой и ненадолго задерживайтесь возле неё. Телефон держите неподвижно.', return: 'Посмотрите прямо и задержитесь на мгновение.', passed: 'Круг пройден. Готовим результат.' };
   setMessage(state.reason || titles[state.stage], hints[state.stage], 'КРУГ ПО ЧАСОВОЙ СТРЕЛКЕ');
   $('motion-progress-label').textContent = state.stage === 'calibrate' ? 'Исходное положение' : state.stage === 'return' ? 'Круг пройден · вернитесь в центр' : `${Math.round(state.progress * 100)}% круга`;
   $('motion-progress-bar').style.width = `${state.progress * 100}%`;
@@ -340,7 +340,7 @@ async function tick(token) {
       inferenceWait = new AbortController();
       faces = await withDeadline(inference, PERFORMANCE_LIMITS.inferenceTimeoutMs, inferenceWait.signal);
       if (token !== session || phase !== 'running' || captureMode !== 'auto') return;
-      pose = faces.length === 1 ? estimatePose(cv, faces[0].keypoints, frame.width, frame.height) : null;
+      pose = faces.length === 1 ? step === 'liveness' ? estimateMotionPose(faces[0].keypoints) : estimatePose(cv, faces[0].keypoints, frame.width, frame.height) : null;
       result = step === 'face' ? evaluateFace(faces, guide, pose) : {};
       result.face = faces.length === 1 ? faces[0] : null;
     } else {
@@ -483,7 +483,7 @@ $('help').addEventListener('click', e => { if (e.target === $('help')) $('help')
 document.addEventListener('visibilitychange', () => { visibilityEpoch++; gate.reset(); motion.reset(); performanceGuard.reset(); previousQuad = null; });
 window.addEventListener('pagehide', () => { session++; stopStream(); releaseModels(); phase = 'error'; });
 window.addEventListener('pageshow', e => { if (e.persisted) reset(); });
-const onResize = () => { gate.reset(); motion.reset(); performanceGuard.reset(); previousQuad = null; drawOverlay(); };
+const onResize = () => { gate.reset(); performanceGuard.reset(); previousQuad = null; drawOverlay(); };
 if (window.ResizeObserver) new ResizeObserver(onResize).observe(shell);
 else window.addEventListener('resize', onResize);
 renderStep();

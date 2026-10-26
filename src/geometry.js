@@ -1,5 +1,5 @@
 export const FACE_OUTLINE = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
-export const LIMITS = { holdMs: 400, maxGapMs: 350, yaw: 13, pitch: 15, roll: 10, gaze: 0.2, eyeOpen: 0.12 };
+export const LIMITS = { holdMs: 400, maxGapMs: 350, yaw: 14.95, pitch: 17.25, roll: 11.5, gaze: 0.23, verticalGaze: 0.115, eyeOpen: 0.12 };
 export const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
 export function guideFor(width, height, step, orientation = 'landscape') {
@@ -61,7 +61,7 @@ export function evaluateFace(faces, guide, pose) {
     return { horizontal, opening, vertical };
   });
   const eyesOpen = eyes.every(e => e.opening >= LIMITS.eyeOpen);
-  const gaze = eyes.every(e => Math.abs(e.horizontal - 0.5) <= LIMITS.gaze && e.vertical <= 0.10);
+  const gaze = eyes.every(e => Math.abs(e.horizontal - 0.5) <= LIMITS.gaze && e.vertical <= LIMITS.verticalGaze);
   checks.push(check('gaze', 'Взгляд в камеру', eyesOpen && gaze, !eyesOpen ? 'Откройте глаза' : gaze ? 'Смотрите в объектив' : 'Переведите взгляд на объектив'));
   return outcome(checks, { ...pose, faceFill: fill, eyes });
 }

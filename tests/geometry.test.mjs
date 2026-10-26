@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { HoldGate, coverCrop, guideFor, evaluateDocument, evaluateFace, FACE_OUTLINE } from '../src/geometry.js';
+import { HoldGate, coverCrop, guideFor, evaluateDocument, evaluateFace, FACE_OUTLINE, LIMITS } from '../src/geometry.js';
 
 test('capture requires 400 ms and at least three fresh valid samples', () => {
   const gate = new HoldGate();
@@ -99,4 +99,21 @@ test('looking sideways, closed eyes and partially clipped face fail', () => {
   assert.equal(evaluateFace([face], g, pose).valid, false);
   ({ g, face, pose } = faceFixture()); face.keypoints[10].y = 80;
   assert.equal(evaluateFace([face], g, pose).valid, false);
+});
+
+test('selfie head and gaze tolerances are relaxed by exactly 15%, while limits still apply', () => {
+  for (const [field, original] of Object.entries({ yaw: 13, pitch: 15, roll: 10 })) {
+    const { g, face, pose } = faceFixture();
+    assert.ok(Math.abs(LIMITS[field] - original * 1.15) < .00001);
+    assert.equal(evaluateFace([face], g, { ...pose, [field]: original * 1.14 }).valid, true);
+    assert.equal(evaluateFace([face], g, { ...pose, [field]: original * 1.16 }).valid, false);
+  }
+  for (const [fraction, expected] of [[.228, true], [.232, false]]) {
+    const { g, face, pose } = faceFixture(); face.keypoints[468].x += 30 * fraction;
+    assert.equal(evaluateFace([face], g, pose).valid, expected);
+  }
+  for (const [fraction, expected] of [[.114, true], [.116, false]]) {
+    const { g, face, pose } = faceFixture(); face.keypoints[468].y += 30 * fraction;
+    assert.equal(evaluateFace([face], g, pose).valid, expected);
+  }
 });
