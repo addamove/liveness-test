@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { preflightReason, PerformanceGuard, PERFORMANCE_LIMITS, withDeadline } from '../src/performance.js';
+import { preflightReason, PerformanceGuard, PERFORMANCE_LIMITS, withDeadline, DEVICE_PERFORMANCE_CHECKS_ENABLED, performanceDeadline, inspectDevice } from '../src/performance.js';
 
 test('unsupported capabilities and known low resource hints choose manual before loading', () => {
   assert.equal(preflightReason({ wasm: false, webgl: true }), 'unsupported');
@@ -78,5 +78,18 @@ test('deadline releases caller on timeout and observes late model rejection', as
 test('switching to manual cancels model wait without waiting for the model', async () => {
   const controller = new AbortController();
   const wait = withDeadline(new Promise(() => {}), 5000, controller.signal);
+  controller.abort(); await assert.rejects(wait, { name: 'AbortError' });
+});
+
+test('temporary demo policy skips resource hints and speed deadlines but keeps cancellation', async () => {
+  assert.equal(DEVICE_PERFORMANCE_CHECKS_ENABLED, false);
+  assert.equal(performanceDeadline(12000), null);
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { deviceMemory: 1, hardwareConcurrency: 1 } });
+  try { assert.equal(inspectDevice({ needsWebGL: false }), null); }
+  finally { if (descriptor) Object.defineProperty(globalThis, 'navigator', descriptor); else delete globalThis.navigator; }
+  assert.equal(await withDeadline(new Promise(resolve => setTimeout(() => resolve(42), 20)), null), 42);
+  const controller = new AbortController();
+  const wait = withDeadline(new Promise(() => {}), null, controller.signal);
   controller.abort(); await assert.rejects(wait, { name: 'AbortError' });
 });

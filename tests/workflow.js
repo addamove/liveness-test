@@ -109,7 +109,14 @@ try {
     }
   });
   observer.observe(document.body, { subtree: true, attributes: true, childList: true });
-  if (['slow', 'error'].includes(scenario)) {
+  if (scenario === 'slow') {
+    const check = setInterval(() => {
+      if (inferenceCalls < 20) return;
+      badge.textContent = document.getElementById('camera-shell').dataset.mode === 'auto' ? 'SLOW CHECKS OFF PASS' : 'SLOW CHECKS OFF FAIL';
+      clearInterval(check);
+    }, 500);
+  }
+  if (scenario === 'error') {
     const fallbackObserver = new MutationObserver(() => {
       if (document.getElementById('camera-shell').dataset.mode === 'manual') {
         fallbackObserver.disconnect();

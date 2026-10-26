@@ -1,3 +1,7 @@
+// Temporary demo policy: keep measurements, but never classify a device as slow.
+export const DEVICE_PERFORMANCE_CHECKS_ENABLED = false;
+export const performanceDeadline = ms => DEVICE_PERFORMANCE_CHECKS_ENABLED ? ms : null;
+
 export const PERFORMANCE_LIMITS = {
   loadTimeoutMs: 12000,
   warmupTimeoutMs: 8000,
@@ -20,11 +24,13 @@ export function preflightReason({ wasm, webgl, memoryGB, cores }) {
   return null;
 }
 
-export function inspectDevice() {
+export function inspectDevice({ needsWebGL = true } = {}) {
   const wasm = typeof WebAssembly === 'object';
-  const memoryGB = navigator.deviceMemory, cores = navigator.hardwareConcurrency;
+  const memoryGB = DEVICE_PERFORMANCE_CHECKS_ENABLED ? navigator.deviceMemory : undefined;
+  const cores = DEVICE_PERFORMANCE_CHECKS_ENABLED ? navigator.hardwareConcurrency : undefined;
   const earlyReason = preflightReason({ wasm, webgl: true, memoryGB, cores });
   if (earlyReason) return earlyReason;
+  if (!needsWebGL) return null;
   const canvas = document.createElement('canvas');
   let gl;
   try { gl = canvas.getContext('webgl2') || canvas.getContext('webgl'); } catch { /* Unsupported or denied. */ }
@@ -80,7 +86,7 @@ export function withDeadline(operation, ms, signal) {
     Promise.resolve(operation).then(value => finish(resolve, value), error => finish(reject, error));
     if (signal?.aborted) { abort(); return; }
     signal?.addEventListener('abort', abort, { once: true });
-    timer = setTimeout(() => finish(reject, Object.assign(new Error('Превышено время ожидания'), { name: 'TimeoutError' })), ms);
+    if (ms != null) timer = setTimeout(() => finish(reject, Object.assign(new Error('Превышено время ожидания'), { name: 'TimeoutError' })), ms);
   });
 }
 

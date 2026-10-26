@@ -5,6 +5,10 @@ export const PHOTO_STEPS = STEPS.slice(0, 3);
 export const isDocumentStep = step => step === 'document' || step === 'document-ml';
 export const STEP_LABELS = { face: 'Лицо', document: 'Паспорт · OpenCV', 'document-ml': 'Паспорт · DocAligner', liveness: 'Движение лица' };
 export const nextStep = step => STEPS[STEPS.indexOf(step) + 1];
+export const normalizeRun = value => STEPS.includes(value) ? value : 'flow';
+export const firstStep = run => run === 'flow' ? 'face' : normalizeRun(run) === 'flow' ? 'face' : run;
+export const nextRunStep = (step, run) => run === 'flow' ? nextStep(step) : undefined;
+export const modelsForStep = step => ({ face: !isDocumentStep(step), document: step === 'document-ml', opencv: step !== 'liveness' });
 
 export class CaptureStats {
   constructor() { this.reset(); }

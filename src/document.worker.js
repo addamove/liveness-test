@@ -1,20 +1,22 @@
-import * as ort from 'onnxruntime-web/webgpu';
 import { documentTensor, decodeDocumentHeatmap } from './docaligner.js';
 
-let model, original, context;
+let ort, model, original, context;
 const resized = new OffscreenCanvas(256, 256), resizedContext = resized.getContext('2d', { willReadFrequently: true });
 self.onmessage = async ({ data: { id, type, imageData, executionProviders } }) => {
   const startedAt = performance.now();
   try {
     let result;
     if (type === 'init') {
+      const providers = executionProviders || ['wasm'];
+      // The CPU path loads the pure WASM runtime, not the WebGPU/Asyncify build.
+      ort = await (providers.includes('webgpu') ? import('onnxruntime-web/webgpu') : import('onnxruntime-web/wasm'));
       ort.env.wasm.wasmPaths = `${self.location.origin}/models/ort/`;
       ort.env.wasm.numThreads = 1;
       const response = await fetch('/models/docaligner/lcnet100.onnx');
       if (!response.ok) throw new Error('Не удалось загрузить DocAligner');
       const bytes = await response.arrayBuffer();
       let lastError;
-      for (const backend of executionProviders || (navigator.gpu ? ['webgpu', 'wasm'] : ['wasm'])) {
+      for (const backend of providers) {
         try {
           model = await ort.InferenceSession.create(bytes, { executionProviders: [backend], graphOptimizationLevel: 'all' });
           result = backend; break;

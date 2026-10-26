@@ -2,6 +2,9 @@ import { defineConfig } from 'vite';
 import { readFile } from 'node:fs/promises';
 
 export default defineConfig({
+  // Do not discover these only when a model worker starts: Vite would reload
+  // the entire capture flow when the newly optimized dependency becomes ready.
+  optimizeDeps: { include: ['@mediapipe/tasks-vision', 'onnxruntime-web/wasm', 'onnxruntime-web/webgpu'] },
   plugins: [{
     name: 'local-wasm-module-loaders',
     configureServer(server) {

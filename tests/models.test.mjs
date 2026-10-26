@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { documentTensor, decodeDocumentHeatmap } from '../src/docaligner.js';
 import { normalizeFaces, faceInputSize } from '../src/face-points.js';
-import { STEPS, PHOTO_STEPS, nextStep, CaptureStats } from '../src/comparison.js';
+import { STEPS, PHOTO_STEPS, nextStep, CaptureStats, normalizeRun, firstStep, nextRunStep, modelsForStep } from '../src/comparison.js';
 import { guideFor } from '../src/geometry.js';
 import { ModelWorker } from '../src/model-worker.js';
 
@@ -66,4 +66,15 @@ test('face inference input is bounded without shrinking the photo coordinate sys
   assert.deepEqual(faceInputSize(320, 240), { width: 320, height: 240 });
   const [face] = normalizeFaces({ faceLandmarks: [[{ x: .5, y: .5, z: .1 }]] }, 590, 960);
   assert.deepEqual(face.keypoints[0], { x: 295, y: 480, z: 59 });
+});
+
+test('isolated runs start at the chosen step, finish there and load only needed models', () => {
+  assert.equal(normalizeRun('bad-input'), 'flow');
+  for (const step of STEPS) {
+    assert.equal(firstStep(step), step); assert.equal(nextRunStep(step, step), undefined);
+    assert.equal(nextRunStep(step, 'flow'), nextStep(step));
+  }
+  assert.deepEqual(modelsForStep('document-ml'), { face: false, document: true, opencv: true });
+  assert.deepEqual(modelsForStep('document'), { face: false, document: false, opencv: true });
+  assert.deepEqual(modelsForStep('liveness'), { face: true, document: false, opencv: false });
 });

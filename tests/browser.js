@@ -31,7 +31,7 @@ document.querySelector('#run').onclick = async () => {
     const points = findDocument(cv, dc.getImageData(0, 0, doc.width, doc.height), dg);
     if (!evaluateDocument(points, dg, points.points).valid) throw new Error('Синтетический документ не прошёл условия');
     log('PASS: OpenCV нашёл документ, все углы внутри рамки.');
-    documentModel = await loadDocumentDetector(new URLSearchParams(location.search).has('wasm') ? { executionProviders: ['wasm'] } : {});
+    documentModel = await loadDocumentDetector({ executionProviders: [new URLSearchParams(location.search).has('webgpu') ? 'webgpu' : 'wasm'] });
     log(`PASS: DocAligner LCNet100 загружен (${documentModel.backend}).`);
     const imageData = dc.getImageData(0, 0, doc.width, doc.height);
     const corners = await documentModel.estimateDocument(imageData);

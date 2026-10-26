@@ -28,11 +28,11 @@ for (const folder of ['face_landmarker/wasm', 'ort']) await mkdir(path.join(asse
 for (const extension of ['js', 'wasm']) await copyFile(
   path.join(root, `node_modules/@mediapipe/tasks-vision/wasm/vision_wasm_module_internal.${extension}`),
   path.join(assets, `face_landmarker/wasm/vision_wasm_module_internal.${extension}`));
-for (const extension of ['mjs', 'wasm']) for (const suffix of ['.asyncify']) await copyFile(
+for (const extension of ['mjs', 'wasm']) for (const suffix of ['', '.asyncify']) await copyFile(
   path.join(root, `node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded${suffix}.${extension}`),
   path.join(assets, `ort/ort-wasm-simd-threaded${suffix}.${extension}`));
 await copyFile(path.join(root, 'node_modules/@techstark/opencv-js/dist/opencv.js'), path.join(assets, 'opencv.js'));
 // Remove only the generated assets from the retired dependency.
 await rm(path.join(assets, 'face_mesh'), { recursive: true, force: true });
-for (const suffix of ['', '.jsep']) for (const extension of ['mjs', 'wasm']) await rm(path.join(assets, `ort/ort-wasm-simd-threaded${suffix}.${extension}`), { force: true });
+for (const extension of ['mjs', 'wasm']) await rm(path.join(assets, `ort/ort-wasm-simd-threaded.jsep.${extension}`), { force: true });
 console.log('Face Landmarker, DocAligner, ONNX Runtime и OpenCV готовы на локальном сервере.');
