@@ -10,7 +10,7 @@ document.querySelector('#run').onclick = async () => {
     log('Загрузка OpenCV и MediaPipe…');
     const [{ cv }, model] = await Promise.all([loadOpenCV(), loadFaceDetector()]); detector = model;
     log('PASS: оба движка загружены.');
-    const img = new Image(); img.src = '/tests/fixtures/portrait.jpg'; await img.decode();
+    const img = new Image(); img.src = new URL('./fixtures/portrait.jpg', import.meta.url).href; await img.decode();
     const original = await detector.estimateFaces(img, { staticImageMode: true });
     if (original.length !== 1 || original[0].keypoints.length !== 478) throw new Error('Ожидалось одно лицо с 478 точками');
     log('PASS: настоящая модель нашла 478 точек на тестовом портрете.');

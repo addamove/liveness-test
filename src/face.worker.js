@@ -7,12 +7,12 @@ self.onmessage = async ({ data: { id, type, bitmap, width, height, timestamp } }
   try {
     let result;
     if (type === 'init') {
-      const files = await FilesetResolver.forVisionTasks('/models/face_landmarker/wasm', true);
+      const files = await FilesetResolver.forVisionTasks(`${import.meta.env.BASE_URL}models/face_landmarker/wasm`, true);
       let lastError;
       for (const delegate of ['GPU', 'CPU']) {
         try {
           model = await FaceLandmarker.createFromOptions(files, {
-            baseOptions: { modelAssetPath: '/models/face_landmarker/face_landmarker.task', delegate },
+            baseOptions: { modelAssetPath: `${import.meta.env.BASE_URL}models/face_landmarker/face_landmarker.task`, delegate },
             runningMode: 'VIDEO', numFaces: 2,
             minFaceDetectionConfidence: .5, minFacePresenceConfidence: .5, minTrackingConfidence: .5,
             outputFaceBlendshapes: false, outputFacialTransformationMatrixes: false,

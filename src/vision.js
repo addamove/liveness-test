@@ -5,8 +5,8 @@ export function loadOpenCV() {
   if (!cvPromise) cvPromise = new Promise((resolve, reject) => {
     const script = document.createElement('script');
     const timer = setTimeout(() => reject(new Error('OpenCV загружается слишком долго. Обновите страницу.')), 60000);
-    script.src = '/models/opencv.js';
-    script.onerror = () => { clearTimeout(timer); reject(new Error('Не удалось загрузить OpenCV. Проверьте соединение с компьютером.')); };
+    script.src = `${import.meta.env.BASE_URL}models/opencv.js`;
+    script.onerror = () => { clearTimeout(timer); reject(new Error('Не удалось загрузить OpenCV. Проверьте соединение с сайтом.')); };
     script.onload = () => {
       try {
         const cv = window.cv;

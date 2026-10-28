@@ -10,9 +10,9 @@ self.onmessage = async ({ data: { id, type, imageData, executionProviders } }) =
       const providers = executionProviders || ['wasm'];
       // The CPU path loads the pure WASM runtime, not the WebGPU/Asyncify build.
       ort = await (providers.includes('webgpu') ? import('onnxruntime-web/webgpu') : import('onnxruntime-web/wasm'));
-      ort.env.wasm.wasmPaths = `${self.location.origin}/models/ort/`;
+      ort.env.wasm.wasmPaths = new URL(`${import.meta.env.BASE_URL}models/ort/`, self.location.origin).href;
       ort.env.wasm.numThreads = 1;
-      const response = await fetch('/models/docaligner/lcnet100.onnx');
+      const response = await fetch(`${import.meta.env.BASE_URL}models/docaligner/lcnet100.onnx`);
       if (!response.ok) throw new Error('Не удалось загрузить DocAligner');
       const bytes = await response.arrayBuffer();
       let lastError;
